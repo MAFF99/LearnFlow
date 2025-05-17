@@ -1,0 +1,225 @@
+%pip -q install google-genai
+
+
+# Configura a API Key do Google Gemini
+
+import os
+from google.colab import userdata
+
+os.environ["GOOGLE_API_KEY"] = userdata.get('GOOGLE_API_KEY')
+
+
+# Configura o cliente da SDK do Gemini
+
+from google import genai
+
+client = genai.Client()
+
+MODEL_ID = "gemini-2.0-flash"
+
+
+# Instalar Framework de agentes do Google ################################################
+!pip install -q google-adk
+
+
+# -*- coding: utf-8 -*-
+# %%
+from IPython import get_ipython
+from IPython.display import display
+# %%
+%pip -q install google-genai
+# %%
+# Configura a API Key do Google Gemini
+
+import os
+from google.colab import userdata
+
+os.environ["GOOGLE_API_KEY"] = userdata.get('GOOGLE_API_KEY')
+# %%
+# Configura o cliente da SDK do Gemini
+
+from google import genai
+
+client = genai.Client()
+
+MODEL_ID = "gemini-2.0-flash"
+# %%
+# Instalar Framework de agentes do Google ################################################
+!pip install -q google-adk
+# %%
+from IPython import get_ipython
+from IPython.display import display, HTML, Markdown
+import os
+from google.colab import userdata
+from google import genai
+from google.adk.agents import Agent
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.adk.tools import google_search
+from google.genai import types
+from datetime import date
+import textwrap
+import requests
+import warnings
+
+warnings.filterwarnings("ignore")
+
+# Configura a API Key do Google Gemini
+os.environ["GOOGLE_API_KEY"] = userdata.get('GOOGLE_API_KEY')
+
+# Configura o cliente da SDK do Gemini
+client = genai.Client()
+MODEL_ID = "gemini-2.0-flash"
+
+# Função auxiliar que envia uma mensagem para um agente via Runner e retorna a resposta final
+def call_agent(agent: Agent, message_text: str) -> str:
+    session_service = InMemorySessionService()
+    session = session_service.create_session(app_name=agent.name, user_id="user1", session_id="session1")
+    runner = Runner(agent=agent, app_name=agent.name, session_service=session_service)
+    content = types.Content(role="user", parts=[types.Part(text=message_text)])
+
+    final_response = ""
+    for event in runner.run(user_id="user1", session_id="session1", new_message=content):
+        if event.is_final_response():
+          for part in event.content.parts:
+            if part.text is not None:
+              final_response += part.text
+              final_response += "\n"
+    return final_response
+
+# Função auxiliar para exibir texto formatado em Markdown no Colab
+def to_markdown(text):
+  text = text.replace('•', '  *')
+  return Markdown(textwrap.indent(text, '> ', predicate=lambda _: True))
+
+#################################################
+# --- Agente 1: Definição de Objetivo (O Farol) ---
+#################################################
+def agente_farol():
+    farol = Agent(
+        name="agente_farol",
+        model="gemini-2.0-flash",
+        instruction="""
+        Você é o Agente de Definição de Objetivo, conhecido como 'O Farol'.
+        Sua função é guiar o usuário na definição de um objetivo de aprendizado claro e específico.
+        1. Comece coletando a intenção inicial do usuário.
+        2. Faça de 3 a 5 perguntas direcionadas para refinar o objetivo. As perguntas devem ajudar a especificar a área de interesse, o objetivo prático e o nível de experiência do usuário.
+        3. Ao final, sintetize as respostas do usuário em uma declaração clara e específica do objetivo de aprendizado.
+        4. Transmita este objetivo refinado para o próximo agente.
+        """,
+        description="Agente que guia o usuário na definição de um objetivo de aprendizado.",
+        # Este agente não precisa de ferramentas externas para esta fase inicial
+    )
+
+    print("Olá! Eu sou O Farol. Qual o seu objetivo de aprendizado inicial?")
+    intencao_inicial = input("Sua intenção inicial: ")
+
+    # TODO: Implementar a lógica interativa para fazer as perguntas e coletar respostas
+    # Por enquanto, usando simulação para demonstração
+    print("\nPara refinar seu objetivo, vou fazer algumas perguntas:")
+    area_interesse = input("Em qual área você tem mais interesse? ")
+    objetivo_especifico = input("Qual seu objetivo específico (hobby, profissional, etc.)? ")
+    nivel_experiencia = input("Qual seu nível de experiência atual? ")
+
+    # Sintetiza o objetivo refinado com base nas respostas (simuladas)
+    objetivo_refinado = f"O usuário quer aprender sobre {intencao_inicial}, com foco em {area_interesse}, para {objetivo_especifico}, considerando que ele é um {nivel_experiencia}."
+    print(f"\nSeu objetivo refinado é: {objetivo_refinado}")
+
+    # Em uma implementação real, você pode chamar o call_agent aqui se quiser
+    # que o agente sintetize o objetivo com base nas entradas brutas do usuário.
+    # Mas para esta função simples, construir a string diretamente é suficiente.
+
+    return objetivo_refinado
+
+######################################
+# --- Agente 2: Agente Pesquisador ---
+######################################
+def agente_pesquisador(objetivo_aprendizado):
+    pesquisador = Agent(
+        name="agente_pesquisador",
+        model="gemini-2.0-flash",
+        instruction=f"""
+        Você é o Agente Pesquisador.
+        Sua tarefa é receber o objetivo de aprendizado específico: '{objetivo_aprendizado}', e realizar buscas abrangentes online para encontrar conteúdos gratuitos relevantes para iniciantes.
+        Utilize a ferramenta de busca do Google (google_search) para encontrar artigos, vídeos, tutoriais e outros recursos, **priorizando a inclusão de vídeos do YouTube quando relevantes e de boa qualidade.**
+
+        Após a busca:
+        1. Filtre e pré-selecione conteúdos que pareçam introdutórios e bem avaliados para o nível do usuário, removendo resultados irrelevantes ou de baixa qualidade aparente com base nas informações da busca (títulos, snippets). **Inclua vídeos do YouTube que sejam tutoriais ou explicações claras para iniciantes.**
+        2. Organize os conteúdos pré-selecionados em uma sequência linear inicial, tentando identificar uma ordem lógica (do básico ao mais avançado dentro do tópico).
+        3. Apresente a lista organizada de conteúdos em um formato claro e consistente, **incluindo o título do recurso e o link (URL completa) para cada item**. Use o formato "- Título do Recurso: [Link do Recurso]". **Certifique-se que o link seja a URL completa e clicável.**
+
+        Priorize materiais introdutórios e bem avaliados para iniciantes no seu objetivo de aprendizado.
+        """,
+        description="Agente que busca, filtra e organiza conteúdos online com base em um objetivo de aprendizado.",
+        tools=[google_search]
+    )
+
+    entrada_pesquisador = f"Busque por conteúdos online sobre: {objetivo_aprendizado}. Priorize recursos para iniciantes, **incluindo vídeos do YouTube**. Filtre e organize os resultados em uma sequência de aprendizado lógico, **apresentando cada recurso com seu título e o link completo no formato: - Título: [Link]**."
+    lista_links_organizada = call_agent(pesquisador, entrada_pesquisador)
+
+    return lista_links_organizada
+
+#############################################
+# --- Agente 3: Agente de Estrutura (O Arquiteto) ---
+#############################################
+def agente_arquiteto(lista_conteudos_organizada):
+    arquiteto = Agent(
+        name="agente_arquiteto",
+        model="gemini-2.0-flash",
+        instruction=f"""
+        Você é o Agente de Estrutura, conhecido como 'O Arquiteto'.
+        Sua tarefa é receber uma lista organizada de conteúdos no formato "- Título: [Link]":
+        ---
+        {lista_conteudos_organizada}
+        ---
+
+        Com base nesta lista e no objetivo de aprendizado do usuário, você deve:
+        1. Avaliar a qualidade, relevância e coerência dos conteúdos **utilizando as informações do título e link fornecidos**. Você pode usar a ferramenta de busca (google_search) para obter mais contexto sobre os tópicos ou fontes, se necessário.
+        2. Refinar a estrutura de aprendizado, reordenando os conteúdos se necessário para garantir uma progressão lógica e suave do conhecimento.
+        3. Criar um cronograma básico de estudos, sugerindo uma estimativa de tempo para cada etapa ou agrupando conteúdos por "semanas" ou "módulos".
+        4. Apresentar a estrutura de aprendizado refinada e o cronograma de forma clara e acessível. **Para cada item no plano, liste o título e o link original (URL completa) fornecido na lista de entrada.** Mantenha o formato "- Título do Recurso: [Link do Recurso]".
+
+        Foque em criar um plano de estudos prático e fácil de seguir para o usuário, **garantindo que os links dos recursos de aprendizado estejam presentes na apresentação final no formato especificado.**
+        """,
+        description="Agente que avalia, refina a estrutura e cria um cronograma de estudos com base em conteúdos encontrados.",
+        tools=[google_search]
+    )
+
+    entrada_arquiteto = f"""
+Avalie e refine a estrutura de aprendizado com base nesta lista de conteúdos.
+A lista de entrada está no formato "- Título: [Link]".
+Sua tarefa é criar um plano de estudos e cronograma, **e para cada item no plano, você DEVE incluir o título do recurso e o link original fornecido na lista de entrada, mantendo o formato "- Título: [Link]".**
+
+Lista de conteúdos organizada:
+{lista_conteudos_organizada}
+
+Crie um cronograma de estudos para o usuário, listando os conteúdos na ordem recomendada e **incluindo o link completo para cada um no formato "- Título: [Link]"**.
+"""
+    estrutura_e_cronograma = call_agent(arquiteto, entrada_arquiteto)
+
+    return estrutura_e_cronograma
+
+# --- Orquestração do Sistema de Aprendizado ---
+print("🚀 Iniciando o Sistema de Aprendizado Interativo 🚀")
+
+# 1. Executa o Agente Farol para definir o objetivo
+print("\n--- 🎯 Executando O Farol (Definição de Objetivo) ---")
+objetivo_do_usuario = agente_farol()
+print(f"\nObjetivo final definido: {objetivo_do_usuario}")
+print("--------------------------------------------------------------")
+
+# 2. Executa o Agente Pesquisador com o objetivo refinado
+print("\n--- 🔍 Executando o Agente Pesquisador ---")
+resultados_pesquisa_organizados = agente_pesquisador(objetivo_do_usuario)
+print("\n--- 📝 Resultado do Agente Pesquisador (Links Encontrados e Organizados) ---\n")
+display(to_markdown(resultados_pesquisa_organizados))
+print("--------------------------------------------------------------")
+
+# 3. Executa o Agente Arquiteto com a lista de conteúdos organizada
+print("\n--- 🏗️ Executando O Arquiteto (Estrutura e Cronograma) ---")
+estrutura_e_cronograma = agente_arquiteto(resultados_pesquisa_organizados)
+print("\n--- 📝 Resultado do Agente Arquiteto (Estrutura e Cronograma) ---\n")
+display(to_markdown(estrutura_e_cronograma))
+print("--------------------------------------------------------------")
+
+print("\n✅ Sistema de Aprendizado Interativo Concluído! Você recebeu seu plano de estudos e recursos.")
